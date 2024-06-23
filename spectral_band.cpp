@@ -1,6 +1,7 @@
 #include "aurora.h"
 #include "daisysp.h"
 #include "arm_math.h"
+#include <math.h>
 
 using namespace daisy;
 using namespace aurora;
@@ -58,9 +59,22 @@ void ApplyMaskSIMD(float32_t* fft_data, float32_t* mask) {
     arm_mult_f32(fft_data, mask, fft_data, FFT_SIZE);
 }
 
-void DoMask(float32_t* fft_data, float32_t* even_mask, float32_t* odd_mask, float mix) {
-
+void ApplyWindowFunction(float* buffer, int size) {
+    for (int i = 0; i < size; ++i) {
+        buffer[i] *= 0.54 - 0.46 * cos(2.0 * M_PI * i / (size - 1)); // Hamming window
+    }
 }
+
+// Apply the high-pass and low-pass filtering
+void ApplyBandpassFilter(float* fft_data, int low_bin, int high_bin) {
+    for (int i = 0; i < low_bin * 2; ++i) {
+        fft_data[i] = 0.0f; // Zero out bins below the high-pass filter
+    }
+    for (int i = high_bin * 2 + 1; i < FFT_SIZE; ++i) {
+        fft_data[i] = 0.0f; // Zero out bins above the low-pass filter
+    }
+}
+
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     hw.ProcessAllControls();
@@ -89,6 +103,12 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
             out_buffer[i] = circular_buffer[index];
         }
 
+        //ApplyWindowFunction(out_buffer, FFT_SIZE);
+        // Apply band-pass filter to remove unwanted frequencies
+        int low_bin = static_cast<int>(30.0f * FFT_SIZE / 48000.0f);
+        int high_bin = static_cast<int>(15000.0f * FFT_SIZE / 48000.0f);
+        ApplyBandpassFilter(fft_output, low_bin, high_bin);
+
         arm_rfft_fast_f32(&S, out_buffer, fft_output, 0);
 
         // Apply masks using SIMD
@@ -109,6 +129,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     // Copy the input to the right output buffer
     memcpy(out[1], in[0], BUFFER_SIZE * sizeof(float)); // Original input to right channel
 }
+
 
 int main(void) {
     hw.Init();
