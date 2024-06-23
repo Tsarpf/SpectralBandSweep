@@ -27,7 +27,8 @@ void CreateMasks(int band_size, float offset, float mix) {
     int offset_bins = static_cast<int>(offset * total_bins);
 
     for (int i = 0; i < total_bins * 2; i += 2) {
-        int band_index = static_cast<int>((i + offset_bins) / band_size); // floor to get the index of the band
+        int bin_index = i / 2;
+        int band_index = static_cast<int>((bin_index + offset_bins) / band_size); // floor to get the index of the band
         bool even_band = band_index % 2 == 0;
         if (even_band) {
             mask_even[i] = mix;      // Real part
@@ -35,8 +36,8 @@ void CreateMasks(int band_size, float offset, float mix) {
             mask_odd[i] = 1.0f;      // Real part
             mask_odd[i + 1] = 1.0f;  // Imaginary part
         } else {
-            mask_odd[i] = 1 - mix;      // Real part
-            mask_odd[i + 1] = 1 - mix;  // Imaginary part
+            mask_odd[i] = 1.0f - mix;      // Real part
+            mask_odd[i + 1] = 1.0f - mix;  // Imaginary part
             mask_even[i] = 1.0f;      // Real part
             mask_even[i + 1] = 1.0f;  // Imaginary part
         }
