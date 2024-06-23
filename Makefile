@@ -1,32 +1,32 @@
 # Project Name
-TARGET = Blink
+TARGET = FrequencyBands
 
 # Build Project for Daisy Bootloader
 APP_TYPE = BOOT_SRAM
 
 # Sources
-#CPP_SOURCES = Blink.cpp
-#CPP_SOURCES = Blink.cpp kissfft/kiss_fft.c kissfft/kiss_fftr.c
 CPP_SOURCES = spectral_band.cpp
-C_SOURCES = kissfft/kiss_fft.c kissfft/kiss_fftr.c
 
 # Path to the root of the Aurora-SDK
 # When building custom applications outside of this repo
 # update this to point to the Aurora-SDK/ folder
 AURORA_SDK_PATH = ../Aurora-SDK/
 
+# Path to CMSIS-DSP and CMSIS-Core
 CMSIS_PATH = ./CMSIS-DSP/
 CMSIS_CORE_PATH = ./CMSIS_5/CMSIS/Core
 
-CMSIS_SOURCES = $(CMSIS_PATH)/Source/TransformFunctions/arm_cfft_radix4_f32.c \
-                $(CMSIS_PATH)/Source/CommonTables/arm_common_tables.c \
-                $(CMSIS_PATH)/Source/BasicMathFunctions/arm_mult_f32.c
-C_SOURCES += $(CMSIS_SOURCES)
+# Include the main source files for each function category
+CMSIS_SOURCES = $(CMSIS_PATH)/Source/TransformFunctions/TransformFunctions.c \
+                $(CMSIS_PATH)/Source/CommonTables/CommonTables.c \
+                $(CMSIS_PATH)/Source/BasicMathFunctions/BasicMathFunctions.c \
+                $(CMSIS_PATH)/Source/SupportFunctions/SupportFunctions.c \
+                $(CMSIS_PATH)/Source/FastMathFunctions/FastMathFunctions.c
+
+C_SOURCES = $(CMSIS_SOURCES)
 
 # Location of Hardware Support File within the SDK
-#C_INCLUDES += -I$(AURORA_SDK_PATH)/include/
 C_INCLUDES += -I$(AURORA_SDK_PATH)/include/ \
-              -Ikissfft/ \
               -I$(CMSIS_PATH)/Include \
               -I$(CMSIS_PATH)/PrivateInclude \
               -I$(CMSIS_CORE_PATH)/Include
