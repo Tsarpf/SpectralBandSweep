@@ -9,12 +9,12 @@ using namespace daisysp;
 Hardware hw;
 
 #define FFT_SIZE 256
-#define FFT_OUTPUT_SIZE (FFT_SIZE + 2) // Corrected size
+#define FFT_OUTPUT_SIZE (FFT_SIZE) // Corrected size
 
 arm_rfft_fast_instance_f32 S;
 float in_buffer[FFT_SIZE];
-float fft_output[FFT_OUTPUT_SIZE];
 float out_buffer[FFT_SIZE];
+float fft_output[FFT_OUTPUT_SIZE];
 float mask_even[FFT_OUTPUT_SIZE];
 float mask_odd[FFT_OUTPUT_SIZE];
 
@@ -23,8 +23,8 @@ void InitFFT() {
 }
 
 void CreateMasks(int band_size, float offset, float mix) {
-    int total_bins = FFT_SIZE / 2 + 1;
-    int offset_bins = static_cast<int>(offset * total_bins);
+    int total_bins = FFT_SIZE / 2;
+    int offset_bins = (static_cast<int>(offset * total_bins) * 4) % total_bins; // loop over 4 times when turning knob from 0 to 1
 
     for (int i = 0; i < total_bins * 2; i += 2) {
         int bin_index = i / 2;
@@ -52,19 +52,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     hw.ProcessAllControls();
     // Copy the input to the right output buffer
 
-    //if (size < FFT_SIZE) {
-    //    for (size_t i = 0; i < size; i++) {
-    //        out[1][i] = in[0][i];
-    //        if (i >= size / 2) {
-    //            out[1][i] = 0.0f; // make it respond to audio but in a broken way
-    //        }
-    //    }
-    //    return;
-    //}
-    //memcpy(out[1], in[0], FFT_SIZE * sizeof(float)); // Original input to right channel
     memcpy(out[1], in[0], FFT_SIZE * sizeof(float)); // Original input to right channel
 
-    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 1.0, 128.0, Mapping::LINEAR);
+    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 2.0, 64.0, Mapping::LINEAR);
     float offset = hw.GetKnobValue(KNOB_WARP);
     float mix = hw.GetKnobValue(KNOB_MIX);
 
