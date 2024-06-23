@@ -8,8 +8,8 @@ using namespace daisysp;
 
 Hardware hw;
 
-#define FFT_SIZE 1024
-#define FFT_OUTPUT_SIZE (FFT_SIZE / 2 + 1)
+#define FFT_SIZE 256
+#define FFT_OUTPUT_SIZE (FFT_SIZE + 2) // Corrected size
 
 arm_rfft_fast_instance_f32 S;
 float in_buffer[FFT_SIZE];
@@ -22,17 +22,23 @@ void InitFFT() {
     arm_rfft_fast_init_f32(&S, FFT_SIZE);
 }
 
-void CreateMasks(float band_size, float offset, float mix) {
-    int offset_bins = static_cast<int>(offset * FFT_OUTPUT_SIZE);
+void CreateMasks(int band_size, float offset, float mix) {
+    int total_bins = FFT_SIZE / 2 + 1;
+    int offset_bins = static_cast<int>(offset * total_bins);
 
-    for (int i = 0; i < FFT_OUTPUT_SIZE; ++i) {
-        int offset_index = (i + offset_bins) % FFT_OUTPUT_SIZE;
-        if ((offset_index / static_cast<int>(band_size)) % 2 == 0) {
-            mask_even[offset_index] = mix;
-            mask_odd[offset_index] = 0.0f;
+    for (int i = 0; i < total_bins * 2; i += 2) {
+        int band_index = static_cast<int>((i + offset_bins) / band_size); // floor to get the index of the band
+        bool even_band = band_index % 2 == 0;
+        if (even_band) {
+            mask_even[i] = mix;      // Real part
+            mask_even[i + 1] = mix;  // Imaginary part
+            mask_odd[i] = 1.0f;      // Real part
+            mask_odd[i + 1] = 1.0f;  // Imaginary part
         } else {
-            mask_even[offset_index] = 0.0f;
-            mask_odd[offset_index] = mix;
+            mask_odd[i] = 1 - mix;      // Real part
+            mask_odd[i + 1] = 1 - mix;  // Imaginary part
+            mask_even[i] = 1.0f;      // Real part
+            mask_even[i + 1] = 1.0f;  // Imaginary part
         }
     }
 }
@@ -41,52 +47,54 @@ void ApplyMaskSIMD(float32_t* fft_data, float32_t* mask) {
     arm_mult_f32(fft_data, mask, fft_data, FFT_OUTPUT_SIZE);
 }
 
-//void ApplyMasks(float32_t* fft_data, float32_t* mask_even, float32_t* mask_odd) {
-//    ApplyMasksSIMD(fft_data, mask_even);
-//    ApplyMasksSIMD(fft_data, mask_odd);
-//    arm_mult_f32(fft_data, mask_even, fft_data, FFT_OUTPUT_SIZE);
-//    arm_mult_f32(fft_data, mask_odd, fft_data, FFT_OUTPUT_SIZE);
-//}
-
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     hw.ProcessAllControls();
+    // Copy the input to the right output buffer
 
-    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 500.0, 10000.0, Mapping::LOG);
+    //if (size < FFT_SIZE) {
+    //    for (size_t i = 0; i < size; i++) {
+    //        out[1][i] = in[0][i];
+    //        if (i >= size / 2) {
+    //            out[1][i] = 0.0f; // make it respond to audio but in a broken way
+    //        }
+    //    }
+    //    return;
+    //}
+    //memcpy(out[1], in[0], FFT_SIZE * sizeof(float)); // Original input to right channel
+    memcpy(out[1], in[0], FFT_SIZE * sizeof(float)); // Original input to right channel
+
+    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 1.0, 128.0, Mapping::LINEAR);
     float offset = hw.GetKnobValue(KNOB_WARP);
     float mix = hw.GetKnobValue(KNOB_MIX);
 
-    CreateMasks(band_size, offset, mix);
+    CreateMasks(static_cast<int>(band_size), offset, mix);
 
-    for (size_t i = 0; i < size; i += FFT_SIZE) {
-        // Copy input to in_buffer
-        memcpy(in_buffer, &in[0][i], FFT_SIZE * sizeof(float));
+    // Copy input to in_buffer
+    memcpy(in_buffer, in[0], FFT_SIZE * sizeof(float));
 
-        // Perform FFT
-        arm_rfft_fast_f32(&S, in_buffer, fft_output, 0);
+    // Perform FFT on the input buffer
+    arm_rfft_fast_f32(&S, in_buffer, fft_output, 0);
 
-        // Apply masks using SIMD
-        // Eventually save the first result to a separate buffer so it can be output from the other channel
-        ApplyMaskSIMD(fft_output, mask_even);
-        ApplyMaskSIMD(fft_output, mask_odd);
+    // Apply even and odd masks using SIMD on the same fft_output
+    ApplyMaskSIMD(fft_output, mask_even);
+    ApplyMaskSIMD(fft_output, mask_odd);
 
-        // Perform inverse FFT
-        arm_rfft_fast_f32(&S, fft_output, out_buffer, 1);
+    // Perform inverse FFT on the mixed FFT output
+    arm_rfft_fast_f32(&S, fft_output, out_buffer, 1);
 
-        // Copy output to the audio buffer
-        for (size_t j = 0; j < FFT_SIZE; ++j) {
-            out[0][i + j] = out_buffer[j]; // Mixed output
-
-            // ugly GPT stuff that makes no sense
-            //out[1][i + j] = mask_even[j % FFT_OUTPUT_SIZE] * out_buffer[j]; // Even-masked output
-        }
-    }
+    // Copy the result to the left output buffer
+    memcpy(out[0], out_buffer, FFT_SIZE * sizeof(float)); // Mixed output
 }
 
 int main(void) {
+    //hw.SetAudioBlockSize(FFT_SIZE);
+    //hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
+
     hw.Init();
 
-    hw.SetAudioBlockSize(FFT_SIZE);
     hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
+    hw.SetAudioBlockSize(FFT_SIZE);
+    hw.UpdateHidRates();
 
     InitFFT();
     hw.StartAudio(AudioCallback);
