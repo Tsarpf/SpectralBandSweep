@@ -51,7 +51,7 @@ void CreateMask(int band_size, float offset, float mix) {
 
         // beautiful GPT ternary
         // [0, 1] for 0-50%, [1, 8] for 50-100%
-        float weight = even_band ? 1.0f : (mix < 0.5f ? mix * 2.0f : 1.0f + (mix - 0.5f) * 28.0f); // 0-1 for 0-50%, 1-8 for 50-100%
+        float weight = even_band ? 1.0f : (mix < 0.5f ? mix * 2.0f : 1.0f + (mix - 0.5f) * 100.0f); // 0-1 for 0-50%, 1-8 for 50-100%
 
 
         mask[i] = weight;      // Real part
