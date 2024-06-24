@@ -180,6 +180,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float reflect = hw.GetKnobValue(KNOB_REFLECT); // Reflect parameter for comb filter
     float atmosphere = hw.GetKnobValue(KNOB_ATMOSPHERE); // Atmosphere parameter for tilt EQ
 
+    time += hw.GetCvValue(CV_TIME);
+    reflect += hw.GetCvValue(CV_REFLECT);
+    atmosphere += hw.GetCvValue(CV_ATMOSPHERE);
+
     CreateMask(static_cast<int>(band_size), offset, mix);
 
     // Copy incoming audio samples into the circular buffer
