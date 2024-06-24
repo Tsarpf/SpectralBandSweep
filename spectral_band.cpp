@@ -1,7 +1,6 @@
 #include "aurora.h"
 #include "daisysp.h"
 #include "arm_math.h"
-#include <math.h>
 
 using namespace daisy;
 using namespace aurora;
