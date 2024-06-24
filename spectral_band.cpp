@@ -17,12 +17,12 @@ arm_rfft_fast_instance_f32 S;
 float circular_buffer[CIRCULAR_BUFFER_SIZE];
 int write_ptr = 0;
 int buffer_count = 0;
+float fft_input[FFT_SIZE];
 float fft_output[FFT_SIZE];
 float ifft_output[FFT_SIZE];
-float out_buffer[CIRCULAR_BUFFER_SIZE];
-float window[FFT_SIZE];
 float mask[FFT_SIZE];
 float phase_accum[FFT_SIZE / 2];
+float overlap_buffer[OVERLAP_SIZE];
 
 void InitFFT() {
     arm_rfft_fast_init_f32(&S, FFT_SIZE);
@@ -62,13 +62,8 @@ void ApplyMaskSIMD(float32_t* fft_data, float32_t* mask) {
 
 void ApplyWindowFunction(float* buffer, int size) {
     for (int i = 0; i < size; ++i) {
-        buffer[i] *= window[i];
-    }
-}
-
-void GenerateWindowFunction(float* window, int size) {
-    for (int i = 0; i < size; ++i) {
-        window[i] = 0.54 - 0.46 * cos(2.0 * M_PI * i / (size - 1)); // Hamming window
+        float hamming = 0.54 - 0.46 * cos(2.0 * M_PI * i / (size - 1));
+        buffer[i] *= hamming;
     }
 }
 
@@ -93,10 +88,46 @@ void MaintainPhaseContinuity(float* fft_data, float* phase_accum, int size, int 
     }
 }
 
+void ApplyGriffinLim(float* magnitudes, float* phases, int fft_size, int max_iterations) {
+    // Temporary buffers for FFT and IFFT results
+    float temp_fft_output[fft_size];
+    float temp_ifft_output[fft_size];
+
+    // Initialize temporary buffers with initial values
+    for (int i = 0; i < fft_size; i += 2) {
+        temp_fft_output[i] = magnitudes[i / 2] * cosf(phases[i / 2]);
+        temp_fft_output[i + 1] = magnitudes[i / 2] * sinf(phases[i / 2]);
+    }
+
+    for (int iter = 0; iter < max_iterations; ++iter) {
+        // Perform IFFT to get time-domain signal
+        arm_rfft_fast_f32(&S, temp_fft_output, temp_ifft_output, 1);
+
+        // Perform FFT to get new magnitude and phase estimates
+        arm_rfft_fast_f32(&S, temp_ifft_output, temp_fft_output, 0);
+
+        // Update magnitudes to the original target magnitudes and keep the newly computed phases
+        for (int i = 0; i < fft_size; i += 2) {
+            float real = temp_fft_output[i];
+            float imag = temp_fft_output[i + 1];
+            float magnitude = magnitudes[i / 2]; // Use the target magnitudes
+            float phase = atan2f(imag, real);
+            temp_fft_output[i] = magnitude * cosf(phase);
+            temp_fft_output[i + 1] = magnitude * sinf(phase);
+        }
+    }
+
+    // Final update of magnitudes with refined phases
+    for (int i = 0; i < fft_size; i += 2) {
+        magnitudes[i / 2] = sqrtf(temp_fft_output[i] * temp_fft_output[i] + temp_fft_output[i + 1] * temp_fft_output[i + 1]);
+        phases[i / 2] = atan2f(temp_fft_output[i + 1], temp_fft_output[i]);
+    }
+}
+
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     hw.ProcessAllControls();
 
-    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 2.0, FFT_SIZE / 4, Mapping::LINEAR);
+    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 2.0, FFT_SIZE / 2, Mapping::LINEAR);
     float offset = hw.GetKnobValue(KNOB_WARP);
     float mix = hw.GetKnobValue(KNOB_MIX);
 
@@ -112,54 +143,60 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     buffer_count++;
 
     // Only process FFT after the initial N-1 buffers
-    if (buffer_count >= FFT_SIZE / BUFFER_SIZE) {
-        // Perform FFT on the most recent FFT_SIZE samples
-        int start_index = (write_ptr + CIRCULAR_BUFFER_SIZE - FFT_SIZE) % CIRCULAR_BUFFER_SIZE;
-        for (int i = 0; i < FFT_SIZE; ++i) {
-            int index = (start_index + i) % CIRCULAR_BUFFER_SIZE;
-            out_buffer[i] = circular_buffer[index];
-        }
+    if (buffer_count < FFT_SIZE / BUFFER_SIZE) {
+        memcpy(out[0], in[0], BUFFER_SIZE * sizeof(float));
+        return;
+    }
 
-        ApplyWindowFunction(out_buffer, FFT_SIZE);
+    // Perform FFT on the most recent FFT_SIZE samples
+    int start_index = (write_ptr + CIRCULAR_BUFFER_SIZE - FFT_SIZE) % CIRCULAR_BUFFER_SIZE;
+    for (int i = 0; i < FFT_SIZE; ++i) {
+        int index = (start_index + i) % CIRCULAR_BUFFER_SIZE;
+        fft_input[i] = circular_buffer[index];
+    }
 
-        arm_rfft_fast_f32(&S, out_buffer, fft_output, 0);
+    ApplyWindowFunction(fft_input, FFT_SIZE);
 
-        // Apply band-pass filter to remove unwanted frequencies
-        int low_bin = static_cast<int>(30.0f * FFT_SIZE / 48000.0f);
-        int high_bin = static_cast<int>(15000.0f * FFT_SIZE / 48000.0f);
-        for (int i = 0; i < low_bin * 2; ++i) {
-            fft_output[i] = 0.0f; // Zero out bins below the high-pass filter
-        }
-        for (int i = high_bin * 2 + 1; i < FFT_SIZE; ++i) {
-            fft_output[i] = 0.0f; // Zero out bins above the low-pass filter
-        }
+    arm_rfft_fast_f32(&S, fft_input, fft_output, 0);
 
-        // Apply mask using SIMD
-        ApplyMaskSIMD(fft_output, mask);
+    // Apply mask using SIMD
+    ApplyMaskSIMD(fft_output, mask);
 
-        // Maintain phase continuity
-        MaintainPhaseContinuity(fft_output, phase_accum, FFT_SIZE, BUFFER_SIZE);
+    // Prepare magnitude and phase arrays for Griffin-Lim
+    float magnitudes[FFT_SIZE / 2];
+    float phases[FFT_SIZE / 2];
+    for (int i = 0; i < FFT_SIZE; i += 2) {
+        float real = fft_output[i];
+        float imag = fft_output[i + 1];
+        magnitudes[i / 2] = sqrtf(real * real + imag * imag);
+        phases[i / 2] = atan2f(imag, real);
+    }
 
-        // Perform inverse FFT
-        arm_rfft_fast_f32(&S, fft_output, ifft_output, 1);
+    // Apply Griffin-Lim algorithm
+    ApplyGriffinLim(magnitudes, phases, FFT_SIZE, 1);
 
-        // Overlap-add to reconstruct the time-domain signal
-        static float previous_overlap[OVERLAP_SIZE] = {0}; // Buffer to store the overlap
+    // Construct the complex signal from refined magnitudes and phases for IFFT
+    for (int i = 0; i < FFT_SIZE; i += 2) {
+        fft_output[i] = magnitudes[i / 2] * cosf(phases[i / 2]);
+        fft_output[i + 1] = magnitudes[i / 2] * sinf(phases[i / 2]);
+    }
 
-        // Add the end of the previous window to the start of the new window
-        for (int i = 0; i < OVERLAP_SIZE; ++i) {
-            ifft_output[i] += previous_overlap[i];
-        }
+    // Perform inverse FFT
+    arm_rfft_fast_f32(&S, fft_output, ifft_output, 1);
 
-        // Save the end of the current window for the next overlap
-        for (int i = 0; i < OVERLAP_SIZE; ++i) {
-            previous_overlap[i] = ifft_output[BUFFER_SIZE + i];
-        }
+    // Overlap-add to reconstruct the time-domain signal
+    for (int i = 0; i < OVERLAP_SIZE; ++i) {
+        ifft_output[i] += overlap_buffer[i];
+    }
 
-        // Output the middle BUFFER_SIZE samples to the audio buffer
-        for (size_t i = 0; i < BUFFER_SIZE; ++i) {
-            out[0][i] = ifft_output[OVERLAP_SIZE / 2 + i];
-        }
+    // Save the end of the current window for the next overlap
+    for (int i = 0; i < OVERLAP_SIZE; ++i) {
+        overlap_buffer[i] = ifft_output[BUFFER_SIZE + i];
+    }
+
+    // Output the middle BUFFER_SIZE samples to the audio buffer
+    for (size_t i = 0; i < BUFFER_SIZE; ++i) {
+        out[0][i] = ifft_output[BUFFER_SIZE + i];
     }
 
     if (buffer_count >= (FFT_SIZE / BUFFER_SIZE) * 10) {
@@ -170,7 +207,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     memcpy(out[1], in[0], BUFFER_SIZE * sizeof(float)); // Original input to right channel
 }
 
-
 int main(void) {
     hw.Init();
 
@@ -179,7 +215,6 @@ int main(void) {
     hw.UpdateHidRates();
 
     InitFFT();
-    GenerateWindowFunction(window, FFT_SIZE);
 
     hw.StartAudio(AudioCallback);
 
