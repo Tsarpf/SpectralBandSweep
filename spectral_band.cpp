@@ -36,7 +36,7 @@ void InitCombFilter() {
 
 // Comb filter function
 float CombFilter(float input, float time, float reflect) {
-    int delay_samples = static_cast<int>(time * (COMB_FILTER_SIZE - 1)) + 1;
+    int delay_samples = static_cast<int>(time * (COMB_FILTER_SIZE - 2)) + 1;
     int read_index = (comb_filter_write_index - delay_samples + COMB_FILTER_SIZE) % COMB_FILTER_SIZE;
 
     float delayed_sample = comb_filter_buffer[read_index];
