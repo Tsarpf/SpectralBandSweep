@@ -28,7 +28,6 @@ void InitFFT() {
     arm_rfft_fast_init_f32(&S, FFT_SIZE);
 }
 
-
 void CreateMask(int band_size, float offset, float mix) {
     int total_bins = FFT_SIZE / 2;
     int max_offset = MAX(100, band_size);
@@ -53,13 +52,10 @@ void CreateMask(int band_size, float offset, float mix) {
         // [0, 1] for 0-50%, [1, 8] for 50-100%
         float weight = even_band ? 1.0f : (mix < 0.5f ? mix * 2.0f : 1.0f + (mix - 0.5f) * 100.0f); // 0-1 for 0-50%, 1-8 for 50-100%
 
-
         mask[i] = weight;      // Real part
         mask[i + 1] = weight;  // Imaginary part
     }
 }
-
-
 
 void ApplyMaskSIMD(float32_t* fft_data, float32_t* mask) {
     arm_mult_f32(fft_data, mask, fft_data, FFT_SIZE);
@@ -132,10 +128,10 @@ void ApplyGriffinLim(float* magnitudes, float* phases, int fft_size, int max_ite
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     hw.ProcessAllControls();
 
-    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 2.0, FFT_SIZE / 2, Mapping::LINEAR);
+    float band_size = fmap(hw.GetKnobValue(KNOB_BLUR) + hw.GetCvValue(CV_BLUR), 2.0, FFT_SIZE / 2, Mapping::LINEAR);
     band_size = 2 + band_size / 6; // Limit to more useful range
-    float offset = hw.GetKnobValue(KNOB_WARP);
-    float mix = hw.GetKnobValue(KNOB_MIX);
+    float offset = hw.GetKnobValue(KNOB_WARP) + hw.GetCvValue(CV_WARP);
+    float mix = hw.GetKnobValue(KNOB_MIX) + hw.GetCvValue(CV_MIX);
 
     CreateMask(static_cast<int>(band_size), offset, mix);
 
