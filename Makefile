@@ -22,7 +22,8 @@ CMSIS_SOURCES = $(CMSIS_PATH)/Source/TransformFunctions/TransformFunctions.c \
                 $(CMSIS_PATH)/Source/BasicMathFunctions/BasicMathFunctions.c \
                 $(CMSIS_PATH)/Source/SupportFunctions/SupportFunctions.c \
                 $(CMSIS_PATH)/Source/FastMathFunctions/FastMathFunctions.c \
-                $(CMSIS_PATH)/Source/FilteringFunctions/FilteringFunctions.c
+                $(CMSIS_PATH)/Source/FilteringFunctions/FilteringFunctions.c \
+                $(CMSIS_PATH)/Source/StatisticsFunctions/StatisticsFunctions.c \
 
 C_SOURCES = $(CMSIS_SOURCES)
 

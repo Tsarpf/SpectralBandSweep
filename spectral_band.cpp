@@ -24,6 +24,49 @@ float mask[FFT_SIZE];
 float phase_accum[FFT_SIZE / 2];
 float overlap_buffer[OVERLAP_SIZE];
 
+#define COMB_FILTER_SIZE 8192
+float comb_filter_buffer[COMB_FILTER_SIZE];
+int comb_filter_write_index = 0;
+
+// Initialize comb filter buffer
+void InitCombFilter() {
+    memset(comb_filter_buffer, 0, sizeof(comb_filter_buffer));
+    comb_filter_write_index = 0;
+}
+
+// Comb filter function
+float CombFilter(float input, float time, float reflect) {
+    int delay_samples = static_cast<int>(time * (COMB_FILTER_SIZE - 1));
+    int read_index = (comb_filter_write_index - delay_samples + COMB_FILTER_SIZE) % COMB_FILTER_SIZE;
+
+    float delayed_sample = comb_filter_buffer[read_index];
+    float output = input + delayed_sample * reflect;
+
+    comb_filter_buffer[comb_filter_write_index] = output;
+    comb_filter_write_index = (comb_filter_write_index + 1) % COMB_FILTER_SIZE;
+
+    return output;
+}
+
+// Tilt EQ function
+float TiltEQ(float sample, float atmosphere) {
+    // Simple first-order high-pass and low-pass filters for tilt EQ
+    static float hp_output = 0.0f;
+    static float lp_output = 0.0f;
+
+    float alpha = atmosphere; // Tilt amount
+
+    // Low-pass filter
+    lp_output += alpha * (sample - lp_output);
+
+    // High-pass filter
+    hp_output = sample - lp_output;
+
+    // Combine low-pass and high-pass for tilt EQ
+    return (1.0f - atmosphere) * lp_output + atmosphere * hp_output;
+}
+
+
 void InitFFT() {
     arm_rfft_fast_init_f32(&S, FFT_SIZE);
 }
@@ -133,6 +176,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float offset = hw.GetKnobValue(KNOB_WARP) + hw.GetCvValue(CV_WARP);
     float mix = hw.GetKnobValue(KNOB_MIX) + hw.GetCvValue(CV_MIX);
 
+    float time = hw.GetKnobValue(KNOB_TIME); // Time parameter for comb filter
+    float reflect = hw.GetKnobValue(KNOB_REFLECT); // Reflect parameter for comb filter
+    float atmosphere = hw.GetKnobValue(KNOB_ATMOSPHERE); // Atmosphere parameter for tilt EQ
+
     CreateMask(static_cast<int>(band_size), offset, mix);
 
     // Copy incoming audio samples into the circular buffer
@@ -141,12 +188,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         write_ptr = (write_ptr + 1) % CIRCULAR_BUFFER_SIZE;
     }
 
-    // Increment the buffer count
-    buffer_count++;
 
     // Only process FFT after the initial N-1 buffers
     if (buffer_count < FFT_SIZE / BUFFER_SIZE) {
         memcpy(out[0], in[0], BUFFER_SIZE * sizeof(float));
+        buffer_count++;
         return;
     }
 
@@ -158,6 +204,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     }
 
     ApplyWindowFunction(fft_input, FFT_SIZE);
+
+    // Check RMS before so we can normalize after
+    float32_t rms_before = 0;
+    arm_rms_f32(fft_input, FFT_SIZE, &rms_before);
 
     arm_rfft_fast_f32(&S, fft_input, fft_output, 0);
 
@@ -191,19 +241,23 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         ifft_output[i] += overlap_buffer[i];
     }
 
+    // Apply comb filter and tilt EQ
+    for (size_t i = 0; i < BUFFER_SIZE; ++i) {
+        float combed_signal = CombFilter(ifft_output[BUFFER_SIZE + i], time, reflect);
+        out[0][i] = TiltEQ(combed_signal, atmosphere);
+    }
+
     // Save the end of the current window for the next overlap
     for (int i = 0; i < OVERLAP_SIZE; ++i) {
         overlap_buffer[i] = ifft_output[BUFFER_SIZE + i];
     }
 
+    /*
     // Output the middle BUFFER_SIZE samples to the audio buffer
     for (size_t i = 0; i < BUFFER_SIZE; ++i) {
         out[0][i] = ifft_output[BUFFER_SIZE + i];
     }
-
-    if (buffer_count >= (FFT_SIZE / BUFFER_SIZE) * 10) {
-        buffer_count = (FFT_SIZE / BUFFER_SIZE); // Don't overflow, ugly af.
-    }
+    */
 
     // Copy the input to the right output buffer
     memcpy(out[1], in[0], BUFFER_SIZE * sizeof(float)); // Original input to right channel
@@ -217,6 +271,7 @@ int main(void) {
     hw.UpdateHidRates();
 
     InitFFT();
+    InitCombFilter();
 
     hw.StartAudio(AudioCallback);
 
