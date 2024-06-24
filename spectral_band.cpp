@@ -28,33 +28,44 @@ void InitFFT() {
     arm_rfft_fast_init_f32(&S, FFT_SIZE);
 }
 
+
 void CreateMask(int band_size, float offset, float mix) {
     int total_bins = FFT_SIZE / 2;
-
-    int max_offset = MAX(50, band_size);
-    int offset_bins = static_cast<int>(offset * max_offset) * 2; // loop over 2 times when turning knob from 0 to 1
+    int max_offset = MAX(100, band_size);
+    int offset_bins = static_cast<int>(offset * max_offset) * 8; // loop over 2 times when turning knob from 0 to 1
 
     // Kill DC component
     mask[0] = 0;
     mask[1] = 0;
+
     for (int i = 2; i < total_bins * 2; i += 2) {
         int bin_index = i / 2 + offset_bins;
-        int band_index = bin_index / band_size; // floor to get the index of the band
+        float frequency = bin_index * (48000.0f / FFT_SIZE); // Convert bin index to frequency
+        
+        // Adjust the strength of logarithmic scaling to be more subtle
+        float scale_factor = log2f(1.0f + frequency / 1000.0f);
+        int dynamic_band_size = band_size + static_cast<int>(band_size * scale_factor * 0.3); // Adjust the scaling factor to be more subtle
+        
+        int band_index = bin_index / dynamic_band_size; // Floor to get the index of the band
         bool even_band = band_index % 2 == 0;
         float weight = even_band ? mix : (1.0f - mix);
 
         // Apply smoothing (e.g., linear interpolation between bands)
-        int next_band_index = (bin_index + 1) / band_size;
-        bool next_even_band = next_band_index % 2 == 0;
-        float next_weight = next_even_band ? mix : (1.0f - mix);
+        //int next_bin_index = (bin_index + 1) / dynamic_band_size;
+        //bool next_even_band = next_bin_index % 2 == 0;
+        //float next_weight = next_even_band ? mix : (1.0f - mix);
+        //// Interpolate weights between current and next band
+        //float smoothed_weight = (weight + next_weight) / 2.0f;
+        //mask[i] = smoothed_weight;      // Real part
+        //mask[i + 1] = smoothed_weight;  // Imaginary part
 
-        // Interpolate weights between current and next band
-        float smoothed_weight = (weight + next_weight) / 2.0f;
-
-        mask[i] = smoothed_weight;      // Real part
-        mask[i + 1] = smoothed_weight;  // Imaginary part
+        // Brickwall version, maybe the Griffin-Lim will save us.
+        mask[i] = weight;      // Real part
+        mask[i + 1] = weight;  // Imaginary part
     }
 }
+
+
 
 void ApplyMaskSIMD(float32_t* fft_data, float32_t* mask) {
     arm_mult_f32(fft_data, mask, fft_data, FFT_SIZE);
@@ -128,6 +139,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     hw.ProcessAllControls();
 
     float band_size = fmap(hw.GetKnobValue(KNOB_BLUR), 2.0, FFT_SIZE / 2, Mapping::LINEAR);
+    band_size = 2 + band_size / 6; // Limit to more useful range
     float offset = hw.GetKnobValue(KNOB_WARP);
     float mix = hw.GetKnobValue(KNOB_MIX);
 
