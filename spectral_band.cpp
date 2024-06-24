@@ -48,18 +48,12 @@ void CreateMask(int band_size, float offset, float mix) {
         
         int band_index = bin_index / dynamic_band_size; // Floor to get the index of the band
         bool even_band = band_index % 2 == 0;
-        float weight = even_band ? mix : (1.0f - mix);
 
-        // Apply smoothing (e.g., linear interpolation between bands)
-        //int next_bin_index = (bin_index + 1) / dynamic_band_size;
-        //bool next_even_band = next_bin_index % 2 == 0;
-        //float next_weight = next_even_band ? mix : (1.0f - mix);
-        //// Interpolate weights between current and next band
-        //float smoothed_weight = (weight + next_weight) / 2.0f;
-        //mask[i] = smoothed_weight;      // Real part
-        //mask[i + 1] = smoothed_weight;  // Imaginary part
+        // beautiful GPT ternary
+        // [0, 1] for 0-50%, [1, 8] for 50-100%
+        float weight = even_band ? 1.0f : (mix < 0.5f ? mix * 2.0f : 1.0f + (mix - 0.5f) * 28.0f); // 0-1 for 0-50%, 1-8 for 50-100%
 
-        // Brickwall version, maybe the Griffin-Lim will save us.
+
         mask[i] = weight;      // Real part
         mask[i + 1] = weight;  // Imaginary part
     }
