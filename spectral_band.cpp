@@ -36,7 +36,7 @@ void InitCombFilter() {
 
 // Comb filter function
 float CombFilter(float input, float time, float reflect) {
-    int delay_samples = static_cast<int>(time * (COMB_FILTER_SIZE - 1));
+    int delay_samples = static_cast<int>(time * (COMB_FILTER_SIZE - 1)) + 1;
     int read_index = (comb_filter_write_index - delay_samples + COMB_FILTER_SIZE) % COMB_FILTER_SIZE;
 
     float delayed_sample = comb_filter_buffer[read_index];
@@ -203,11 +203,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         fft_input[i] = circular_buffer[index];
     }
 
-    ApplyWindowFunction(fft_input, FFT_SIZE);
-
     // Check RMS before so we can normalize after
     float32_t rms_before = 0;
     arm_rms_f32(fft_input, FFT_SIZE, &rms_before);
+
+    ApplyWindowFunction(fft_input, FFT_SIZE);
 
     arm_rfft_fast_f32(&S, fft_input, fft_output, 0);
 
@@ -241,6 +241,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         ifft_output[i] += overlap_buffer[i];
     }
 
+    float rms_after = 0.0f;
+    arm_rms_f32(ifft_output, FFT_SIZE, &rms_after);
+
+    if (mix > 0.5f)
+    {
+        // Normalize the output to match the input RMS
+        float normalize_factor = rms_before / rms_after;
+        for (int i = 0; i < FFT_SIZE; ++i) {
+            ifft_output[i] *= normalize_factor;
+        }
+    }
+
     // Apply comb filter and tilt EQ
     for (size_t i = 0; i < BUFFER_SIZE; ++i) {
         float combed_signal = CombFilter(ifft_output[BUFFER_SIZE + i], time, reflect);
@@ -251,13 +263,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     for (int i = 0; i < OVERLAP_SIZE; ++i) {
         overlap_buffer[i] = ifft_output[BUFFER_SIZE + i];
     }
-
-    /*
-    // Output the middle BUFFER_SIZE samples to the audio buffer
-    for (size_t i = 0; i < BUFFER_SIZE; ++i) {
-        out[0][i] = ifft_output[BUFFER_SIZE + i];
-    }
-    */
 
     // Copy the input to the right output buffer
     memcpy(out[1], in[0], BUFFER_SIZE * sizeof(float)); // Original input to right channel
