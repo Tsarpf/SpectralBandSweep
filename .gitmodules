@@ -4,3 +4,6 @@
 [submodule "CMSIS-DSP"]
 	path = CMSIS-DSP
 	url = git@github.com:ARM-software/CMSIS-DSP.git
+[submodule "Aurora-SDK"]
+	path = Aurora-SDK
+	url = https://github.com/qu-bit-electronix/Aurora-SDK
