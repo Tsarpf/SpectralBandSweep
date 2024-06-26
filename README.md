@@ -12,7 +12,9 @@ All six knobs are CV-controllable!
 
 The code could be a lot more optimized! New features could hence be added pretty easily. 
 
-Get the prebuilt firmware binary for free: https://tsarpf.gumroad.com/l/spectral-comb-filter-aurora-custom-firmware
+## Get it
+Prebuilt firmware binary (free): https://tsarpf.gumroad.com/l/spectral-comb-filter-aurora-custom-firmware
+
 Demo https://www.youtube.com/watch?v=jmJCHJux5lY
 
 Buy me a coffee if it's useful https://www.buymeacoffee.com/tsurba
