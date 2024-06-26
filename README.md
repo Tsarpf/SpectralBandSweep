@@ -1,9 +1,12 @@
 # Build
-`git submodule update --init --recursive`
-`make`
+- Install Daisy Toolchain
+- `git submodule update --init --recursive`
+- `cd Aurora-SDK; sh ci/build_libs.sh; cd ..`
+- `make`
+- copy `FrequencyBands.bin` from `build` folder to your device USB and reboot it!
+
 
 # Usage
-
 All six knobs are CV-controllable!
 ### FFT Controls:
 - Warp: offset FFT bands (=multiple bins) by a number of bins
