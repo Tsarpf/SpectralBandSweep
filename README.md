@@ -10,6 +10,14 @@ All six knobs are CV-controllable!
 - Reflect: feedback
 - Atmosphere: TiltEQ, clock-wise to hipass, ccw to lowpass
 
+### I/O section 
+This part could use some more work, right now its essentially only working Left in --> Left out.
+- L out: Wet signal
+- R out: Unaffected Dry signal
+- L in: Used for everything
+- R in: Used for nothing!
+
+
 The code could be a lot more optimized! New features could hence be added pretty easily. 
 
 ## Get it
