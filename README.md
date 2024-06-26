@@ -1,3 +1,9 @@
+# Build
+`git submodule update --init --recursive`
+`make`
+
+# Usage
+
 All six knobs are CV-controllable!
 ### FFT Controls:
 - Warp: offset FFT bands (=multiple bins) by a number of bins

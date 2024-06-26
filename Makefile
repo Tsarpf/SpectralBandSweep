@@ -10,7 +10,7 @@ CPP_SOURCES = spectral_band.cpp
 # Path to the root of the Aurora-SDK
 # When building custom applications outside of this repo
 # update this to point to the Aurora-SDK/ folder
-AURORA_SDK_PATH = ../Aurora-SDK/
+AURORA_SDK_PATH = ./Aurora-SDK/
 
 # Path to CMSIS-DSP and CMSIS-Core
 CMSIS_PATH = ./CMSIS-DSP/
