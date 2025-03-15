@@ -30,7 +30,7 @@ This part could use some more work, right now its essentially only working Left 
 The code could be a lot more optimized! New features could hence be added pretty easily. 
 
 ## Get it
-Prebuilt firmware binary (free): https://tsarpf.gumroad.com/l/spectral-comb-filter-aurora-custom-firmware
+Prebuilt firmware binary is the file `FrequencyBands.bin` just grab it an drop onto the device USB
 
 Demo https://www.youtube.com/watch?v=jmJCHJux5lY
 
